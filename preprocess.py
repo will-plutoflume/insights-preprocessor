@@ -11,13 +11,13 @@ def init():
     print("Loading input.xlsx file to memory")
     tessian = load_report_defender(filepath)
 
-    print("Writing to output.json")
-    f = open("output.json", "w")
+    print("Writing to dough.json")
+    f = open("dough.json", "w")
     f.write(json.dumps(tessian))
     f.close()
     print("All done 🎉")
     print(" ")
-    print("output.json is now ready to be uploaded to tessian.dev/bakery 🍩")
+    print("dough.json is now ready to be uploaded to tessian.dev/bakery 🍩")
 
 
 def load_report_defender(data_source_defender):
