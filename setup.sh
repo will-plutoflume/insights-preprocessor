@@ -3,6 +3,8 @@
 #
 #
 
+installDir="$HOME/Documents/bakery"
+
 red="$(tput setaf 9)"
 yellow="$(tput setaf 11)"
 purp="$(tput setaf 12)"
@@ -28,6 +30,17 @@ echo "${green}               ${blue}.'_.'         "
 read -sk 1 "? Anykey to start"
 
 echo ""
+echo "--${red} Create install directory ${rst}--"
+mkdir -p "$installDir"
+res="$?"
+if [[ "$res" != 0 ]]; then
+	echo "Something went wrong."
+	exit $res
+fi
+cd "$installDir"
+echo "--${green} Create install directory ✅ ${rst}--"
+
+echo ""
 echo "--${red} Check for Python ${rst}--"
 echo "Attempting to get python version. If you do not have python installed you will get a prompt to install it"
 printf "Installed Python Version: "
@@ -42,7 +55,7 @@ echo "--${green} Check for Python ✅ ${rst}--"
 echo ""
 
 echo "--${red} Install python modules  ${rst}--"
-python3 -m pip install pandas rich openpyxl
+python3 -m pip install pandas rich openpyxl requests
 r="$?"
 if [[ "$r" != "0" ]]; then
 	echo "${red}Something went wrong with the pip install command${rst}"
@@ -66,7 +79,7 @@ echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 echo "${purp} All done! You can now prepare files for bakery 🍩 By doing the following: ${rst}"
 echo ""
-echo "- Drop the xlsx in this folder and rename it input.xlsx"
+echo "- Drop the xlsx in this folder ($installDir) and rename it input.xlsx"
 echo "- In a terminal, run ${purp}python3 knead.py${rst}"
 echo ""
 echo "You'll get a new file, dough.json ready to upload to bakery 🍩"
