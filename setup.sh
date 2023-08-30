@@ -55,7 +55,7 @@ echo "--${green} Check for Python ✅ ${rst}--"
 echo ""
 
 echo "--${red} Install python modules  ${rst}--"
-python3 -m pip install pandas rich openpyxl requests
+python3 -m pip install pandas rich openpyxl requests PyInquirer
 r="$?"
 if [[ "$r" != "0" ]]; then
 	echo "${red}Something went wrong with the pip install command${rst}"
@@ -74,12 +74,25 @@ if [[ "$r" != "0" ]]; then
 fi
 echo "--${green} Download latest preprocessor script ✅${rst}--"
 
+echo "" 
+
+echo "--${red} Install alias to .zshrc ${rst}--"
+is_installed="$(cat ~/.zshrc | grep 'alias bakery')"
+if [[ "$is_installed" == "" ]]; then
+	echo 'alias bakery="python3 '"$HOME"'/Documents/bakery/knead.py"' >> "$HOME/.zshrc"
+	source ~/.zshrc
+else
+	echo "Already installed"
+fi
+echo "--${green} Install alias to .zshrc ✅${rst}--"
+
+
 echo ""
 echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
 
 echo "${purp} All done! You can now prepare files for bakery 🍩 By doing the following: ${rst}"
 echo ""
-echo "- Drop the xlsx in this folder ($installDir) and rename it input.xlsx"
-echo "- In a terminal, run ${purp}python3 knead.py${rst}"
+echo "- Drop the xlsx in this folder ($installDir)"
+echo "- In a terminal, run ${purp}bakery${rst}"
 echo ""
 echo "You'll get a new file, dough.json ready to upload to bakery 🍩"

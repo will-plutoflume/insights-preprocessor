@@ -1,16 +1,55 @@
 import pandas as pd
 from os import path, listdir
 from rich.progress import track
+from PyInquirer import prompt
 import json
 import time
+import datetime
 
-# Version 1.0
+version = 2.1
 
-filepath = './input.xlsx'
+filepath = ""
 
+def ask_which_file():
+    source_dir = path.expanduser('~') + "/Documents/bakery"
+    files = listdir(source_dir)
+    valid_files = []
+
+    # Reduce to just xlsx files
+    for file in files:
+        if path.splitext(file)[1] == ".xlsx":
+            valid_files.append(file)
+
+    lm_arr = []
+
+    # Get last modified dates
+    for file in valid_files:
+        last_modified = path.getmtime(source_dir + "/" + file)
+        lm_arr.append({"lm": last_modified, "name": file})
+
+    # Sort so most recently modified is at the top
+    lm_arr.sort(key=lambda x: x["lm"])
+    lm_arr.reverse()
+    valid_files = list(map(lambda x: x["name"], lm_arr))
+
+    questions = [
+        {
+            'type': 'list',
+            'name': 'file',
+            'message': 'Which xlsx file do you want to process?',
+            'choices': valid_files
+        }
+    ]
+
+    answers = prompt(questions)
+    return source_dir + "/" + answers["file"]
 
 def init():
-    print("Loading input.xlsx file to memory")
+    print("Preprocessor version " + str(version))
+
+    filepath = ask_which_file()
+
+    print("Loading " + filepath + " file to memory")
 
     xls = pd.ExcelFile(filepath)
 
@@ -22,7 +61,7 @@ def init():
         print("Report is an unsupported type. Supported reports are: Defender Live, Enforcer Historical")
         quit()
 
-    print("Writing to dough.json")
+    print("Writing to " + path.expanduser('~') + "/Documents/bakery/dough.json")
     f = open("dough.json", "w")
     f.write(json.dumps(tessian))
     f.close()
@@ -82,9 +121,9 @@ def load_report_enforcer_historical(xls):
     print("Loaded ✅")
     print("Report is Enforcer Historical 🟨")
 
-    sheets_to_load = ["breaches"]
+    sheets_to_load = ["breaches","unauthorised_contacts"]
                
-    output_data = []
+    output_data = {}
     for filter in sheets_to_load:
         print("Parsing sheet '" + filter + "'")
         df = xls.parse(filter, header=None)
@@ -94,7 +133,7 @@ def load_report_enforcer_historical(xls):
         row_map = {}
 
         df = df.fillna("")
-
+        output_data[filter] = []
         for row in track(df.iterrows(), description="Analysing each row...", total=df.shape[0]):
 
             if is_first_row:
@@ -112,30 +151,50 @@ def load_report_enforcer_historical(xls):
 
             else:
 
-                col_blacklist = ["sensitivity_features","priority_dump", "regex"]
+                col_blacklist = ["sensitivity_features","priority_dump",""]
                 row_obj = {}
                 for col in range(len(row_map)):
                     if row_map[col] not in col_blacklist:
                         if (row_map[col] == "recipient_ads"):
                             row_obj[row_map[col]] = json.loads(str(row[1][col]).replace('"','').replace("'",'"'))
-                        elif (row_map[col] == "attachment_names" or row_map[col] == "attachments_extensions"):
+                        elif (row_map[col] in ["attachment_names","attachments_extensions"]):
                             # This dirty hack is required because of the super weird 'json' that the xlsx gets
                             # Array elements are surrounded with ' UNLESS there's a ' in the element text, in which case they're surrounded by "
                             # This is bad
 
                             temprow = str(row[1][col])
-                            temprow = temprow.replace('"',"'").replace(", '", ', "').replace("',", '",').replace("']",'"]').replace("['",'["')
+                            temprow = temprow.replace('"',"'").replace('\n', "").replace('\r', "").replace(", '", ', "').replace("',", '",').replace("']",'"]').replace("['",'["')
                             row_obj[row_map[col]] = json.loads(temprow)
+                        elif (row_map[col] == "regex"):
+                            # The regex is full of useful stuff, but forcing it to parse as JSON is hard
+                            # Because it's a python object
+                            # So, the dodgy hack is to run eval() to load the object. This is not a _great_ idea
+                            # But unless anyone wants to attempt to hack you by putting dodgy stuff into a historical enforcer report, we're good
+                           
+                            try:
+                                regex_object = eval(row[1][col])
+                                 
+                                if ("header" in regex_object):
+                                    regex_object["header"] = '["' + regex_object["header"][0].replace('"',"'").replace(" \r\n", '", "') + '"]'
+                                    try:
+                                        regex_object["header"] = json.loads(regex_object["header"])
+                                    except:
+                                        regex_object["header"] = []
+                                row_obj[row_map[col]] = regex_object
+                            except:
+                                 row_obj[row_map[col]] = {}
+                                
+
                         else:
                             row_obj[row_map[col]] = row[1][col]
 
-                output_data.append(row_obj)
+                output_data[filter].append(row_obj)
 
+    output_data["preprocessor_version"] = version
     return output_data
 
 def parse_and_select_headers(blob):
     blacklist = [
-        "received",
         "arc-authentication-results",
         "received-spf",
         "dkim-signature",
@@ -202,3 +261,4 @@ def parse_and_select_headers(blob):
     return out
 
 init()
+
