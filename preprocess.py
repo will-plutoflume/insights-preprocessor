@@ -2,6 +2,7 @@ import pandas as pd
 from os import path, listdir
 from rich.progress import track
 from PyInquirer import prompt
+import re
 import json
 import time
 import datetime
@@ -223,7 +224,7 @@ def load_report_enforcer_historical(xls):
                     if row_map[col] not in col_blacklist:
                         if (row_map[col] == "recipient_ads"):
                             # row_obj[row_map[col]] = json.loads(str(row[1][col]).replace('"','').replace("'",'"'))
-                            print(row[1][col])
+                            # print(row[1][col])
                             row_obj[row_map[col]] = eval(row[1][col])
                         elif (row_map[col] in ["attachment_names","attachments_extensions"]):
                             # This dirty hack is required because of the super weird 'json' that the xlsx gets
@@ -238,18 +239,39 @@ def load_report_enforcer_historical(xls):
                             # Because it's a python object
                             # So, the dodgy hack is to run eval() to load the object. This is not a _great_ idea
                             # But unless anyone wants to attempt to hack you by putting dodgy stuff into a historical enforcer report, we're good
+
+
+                            # The hacky way we pull out regex/headers in a moment often fails
+                            # This isnt' an issue as we dont' really use this data for enforcer
+                            # The only thing we want is the To: and BCC: field, so let's extract this via regex
+                            try: 
+                                to = re.search("to:\s+(.+)", row[1][col].lower())
+                                x = to.group().index("\\r\\n")
+                                row_obj["extracted_to_header"] = to.group()[0:x]
+                            except Exception as e:
+                                row_obj["extracted_to_header"] = ""
+                                pass
+
+                            try: 
+                                bcc = re.search("bcc:\s+(.+)", row[1][col].lower())
+                                x = bcc.group().index("\\r\\n")
+                                row_obj["extracted_bcc_header"] = bcc.group()[0:x]
+                            except Exception as e:
+                                row_obj["extracted_bcc_header"] = ""
+                                pass
+
                            
                             try:
-                                regex_object = eval(row[1][col])
+                                regex_object = eval(row[1][col].replace('$', "").replace('*', ""))
                                  
                                 if ("header" in regex_object):
                                     regex_object["header"] = '["' + regex_object["header"][0].replace('"',"'").replace(" \r\n", '", "') + '"]'
                                     try:
                                         regex_object["header"] = json.loads(regex_object["header"])
-                                    except:
+                                    except Exception as e:
                                         regex_object["header"] = []
                                 row_obj[row_map[col]] = regex_object
-                            except:
+                            except Exception as e:
                                  row_obj[row_map[col]] = {}
                                 
 
