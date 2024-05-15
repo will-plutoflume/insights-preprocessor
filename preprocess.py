@@ -7,7 +7,7 @@ import json
 import time
 import datetime
 
-version = 2.3
+version = 2.4
 
 filepath = ""
 
@@ -62,6 +62,10 @@ def init():
         tessian = load_report_enforcer_historical(xls)
         tessian["module"] = "enforcer"
         tessian["mode"] = "historical"
+    elif "Address Classifications" in xls.sheet_names:
+        tessian = load_report_enforcer_live(xls)
+        tessian["module"] = "enforcer"
+        tessian["mode"] = "live"
     elif "All Triggers" in xls.sheet_names:
         tessian = load_report_guardian(xls)
         tessian["module"] = "guardian"
@@ -279,6 +283,161 @@ def load_report_enforcer_historical(xls):
                             row_obj[row_map[col]] = row[1][col]
 
                 output_data[filter].append(row_obj)
+
+    return output_data
+
+def load_report_enforcer_live(xls):
+    print("Loaded ✅")
+    print("Report is Enforcer Live 🟨")
+
+    sheets_to_load = ["All Triggers", "Address Classifications"]
+               
+    output_data = {}
+    for filter in sheets_to_load:
+        print("Parsing sheet '" + filter + "'")
+        df = xls.parse(filter, header=None)
+        print("Done ✅")
+
+        is_first_row = True
+        row_map = {}
+
+        df = df.fillna("")
+        for row in track(df.iloc[4:].iterrows(), description="Analysing each row...", total=df.shape[0]):
+
+            if is_first_row:
+
+                #First we read in the column header rows to use for our own mappings
+                #This avoids hardcoding row positions and makes us a little more resilient to change
+
+                #The enforcer historical and enforcer live reports hold very similar data
+                #But the title of the columns are different
+                #As we already have support for enforcer historicals, it makes sense to map the live report col names
+                #to the historical report col names and then bakery can treat them as mostly the same
+
+                #Certain fields such as recipient_ads are different formats (array in 1 VS csv in the other)
+                #So we'll handle them explicitly later
+
+                #   Name in historical -> Name in live
+                #	Historical Check Log ID
+                #	timestamp -> timestamp
+                #	sender_ad -> User
+                #   recipient_ads -> Recipients
+                #	sender_name
+                #	number_recipients
+                #	unauthorised_account -> Unauthorized Recipient
+                #	unauthorised_account_name
+                #	contact_type
+                #	subject	-> subject
+                #   attachment_names -> Attachments
+                #	number_attachments -> Number of Attachments
+                #	attachments_size
+                #	attachments_extensions
+                #	exchanged_encrypted_attachments
+                #	project_detected
+                #	sensitivity
+                #	is_sensitive
+                #	message_id
+                #	sensitivity_features
+                #	regex
+                #	priority
+                #	priority_dump
+
+                col_rename_map = {
+                    "unauthorized_email_prevented?": "prevented",
+                    "user": "sender_ad",
+                    "unauthorized_recipient": "unauthorised_account",
+                    "number_of_attachments": "number_attachments",
+                    "attachments": "attachment_names",
+                    "recipients": "recipient_ads",
+                }
+
+                filter_rename_map = {
+                    "All Triggers": "breaches",
+                    "Address Classifications": "unauthorised_contacts"
+                }
+
+                freemail_domains = [
+                    "gmail.com",
+                    "googlemail.com",
+                    "hotmail.com",
+                    "hotmail.co.uk",
+                    "live.com",
+                    "outlook.com",
+                    "outlook.co.uk",
+                    "yahoo.com",
+                    "aol.com",
+                    "mail.com",
+                    "protonmail.com",
+                    "pm.me",
+                    "fastmail.com",
+                    "ntlworld.com",
+                    "icloud.com",
+                    "me.com"
+                ]
+
+                index = 0
+                for column in row[1]:
+                    row_map[index] = str(column).lower().replace(" [internal]", "").replace(" ","_")
+                    if (row_map[index] == "nan"):
+                        row_map[index] = "check_log_id"
+                    if row_map[index] in col_rename_map.keys():
+                        row_map[index] = col_rename_map[row_map[index]]
+                    index += 1
+
+                # Add custom fields we'll calculate for parity with historical reports
+                # if filter == "All Triggers":
+                row_map[index] = "contact_type"
+                index += 1
+
+                is_first_row = False
+
+            else:
+
+                col_blacklist = ["sensitivity_features","priority_dump","attachment_data"]
+                row_obj = {}
+                for col in range(len(row_map)):
+                    if row_map[col] not in col_blacklist:
+                        if (row_map[col] in ["recipient_ads","attachment_names"]):
+                            row_obj[row_map[col]] = str(row[1][col]).split(",") if len(str(row[1][col])) > 0 else []
+                        elif (row_map[col] == "prevented"):
+                            row_obj[row_map[col]] = True if str(row[1][col]) == "Yes" else False
+                        elif (row_map[col] == "sender_ad"):
+                            if filter == "Address Classifications":
+                                row_obj["user_ad"] = str(row[1][col])
+                                row_obj["user_name"] = str(row[1][col]).split("@")[0]
+                            else:
+                                # We don't have a sender name, so we'll use the address
+                                row_obj[row_map[col]] = str(row[1][col])
+                                row_obj["sender_name"] = str(row[1][col])
+                        elif (row_map[col] in ["recipient_data","priority_stats"]):
+                            try:
+                                row_obj[row_map[col]] = eval(str(row[1][col])) if len(str(row[1][col])) > 0 else ""
+                            except Exception as e:
+                                pass
+                        elif (row_map[col] == "unauthorized_address" and filter == "Address Classifications"):
+                            row_obj["contact_ad"] = str(row[1][col])
+                            row_obj["contact_name"] = str(row[1][col]).split("@")[0]
+                        elif row_map[col] == "contact_type":
+                            field = "unauthorised_account" if filter == "All Triggers" else "contact_ad"
+                            if "@" in row_obj[field] and str(row_obj[field].lower().split("@")[1]) in freemail_domains:
+                                row_obj["contact_type"] = "freemail"
+                            else:
+                                row_obj["contact_type"] = "unknown"
+                        elif row_map[col] == "email_sensitive":
+                            row_obj["is_sensitive"] = True if str(row[1][col]) == "1" else False
+                        else:
+                            row_obj[row_map[col]] = str(row[1][col])
+    
+                actual_filter = filter
+                if filter in filter_rename_map.keys():
+                    actual_filter = filter_rename_map[filter]
+                
+                if not actual_filter in output_data.keys():
+                    output_data[actual_filter] = []
+
+                
+                    
+                output_data[actual_filter].append(row_obj)
 
     return output_data
 
