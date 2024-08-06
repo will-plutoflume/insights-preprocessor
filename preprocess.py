@@ -7,7 +7,7 @@ import json
 import time
 import datetime
 
-version = 2.4
+version = 2.5
 
 filepath = ""
 
@@ -71,7 +71,7 @@ def init():
         tessian["module"] = "guardian"
         tessian["mode"] = "live"
     else:
-        print("Report is an unsupported type. Supported reports are: Defender Live, Enforcer Historical")
+        print("Report is an unsupported type. Supported reports are: Defender Live, Enforcer Historical, Enforcer Live")
         quit()
 
     tessian["preprocessor_version"] = version
@@ -82,7 +82,7 @@ def init():
     f.close()
     print("All done 🎉")
     print(" ")
-    print("dough.json is now ready to be uploaded to tessian.dev/bakery 🍩")
+    print("dough.json is now ready to be uploaded to tessian.dev 🍩")
 
 def load_report_guardian(xls):
     print("Loaded ✅")
@@ -192,6 +192,7 @@ def load_report_enforcer_historical(xls):
     print("Loaded ✅")
     print("Report is Enforcer Historical 🟨")
 
+    #We also load high_level_statistics, but that works differently
     sheets_to_load = ["breaches","unauthorised_contacts"]
                
     output_data = {}
@@ -222,7 +223,7 @@ def load_report_enforcer_historical(xls):
 
             else:
 
-                col_blacklist = ["sensitivity_features","priority_dump",""]
+                col_blacklist = ["sensitivity_features","priority_dump","","explanation"]
                 row_obj = {}
                 for col in range(len(row_map)):
                     if row_map[col] not in col_blacklist:
@@ -283,6 +284,35 @@ def load_report_enforcer_historical(xls):
                             row_obj[row_map[col]] = row[1][col]
 
                 output_data[filter].append(row_obj)
+
+
+
+    print("Parsing sheet 'high_level_statistics'")
+    df = xls.parse("high_level_statistics", header=None)
+    print("Done ✅")
+    df = df.fillna("")
+    output_data["high_level_statistics"] = {}
+    high_level_stats_map = {
+        "total number of users": "total_users",
+        "date range": "pov_date_range",
+        "number of unauthorised user contact pairs": "contact_pairs",
+        "% of all users that have at least one unauthorised contact": "users_with_one_unauth_contact_or_more",
+        "total external emails sent": "total_external_emails",
+        "number of emails sent to an unauthorised accounts": "emails_to_unauth_addresses",
+        "number of users who sent > 20 emails": "users_more_than_20_emails",
+        "% of emails sent to unauthorised accounts": "perc_emails_to_unauth_addressess",
+        "total size attachments sent to unauthorised accounts": "attachments_total_size",
+        "total number of attachments sent to unauthorised accounts": "attachments_total_number",
+        "% of unauthorised emails with attachment": "perc_unauth_with_attachments",
+        "% of emails sent to unauthorised accounts which are sensitive": "perc_emails_sensitive"
+    }
+    for row in track(df.iterrows(), description="Analysing each row...", total=df.shape[0]):
+        row_text = row[1][1]
+        if (":" in row_text and row_text.split(":",1)[0] in high_level_stats_map):
+            output_data["high_level_statistics"][high_level_stats_map[row_text.split(":",1)[0]]] = row_text.split(":",1)[1].strip()
+
+
+
 
     return output_data
 
@@ -409,7 +439,7 @@ def load_report_enforcer_live(xls):
                                 # We don't have a sender name, so we'll use the address
                                 row_obj[row_map[col]] = str(row[1][col])
                                 row_obj["sender_name"] = str(row[1][col])
-                        elif (row_map[col] in ["recipient_data","priority_stats"]):
+                        elif (row_map[col] in ["recipient_data","priority_stats","changes_made_before_sending"]):
                             try:
                                 row_obj[row_map[col]] = eval(str(row[1][col])) if len(str(row[1][col])) > 0 else ""
                             except Exception as e:
